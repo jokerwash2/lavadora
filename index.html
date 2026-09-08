@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tour Virtual 3D - Espacio Estética & Café</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1614;
+            color: #fff;
+            user-select: none;
+        }
+
+        #blocker {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(26, 22, 20, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            cursor: pointer;
+        }
+
+        #instructions {
+            text-align: center;
+            color: #f4ece1;
+            max-width: 520px;
+            padding: 35px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 16px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+            transition: transform 0.2s;
+        }
+
+        #instructions:hover {
+            transform: scale(1.02);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        #instructions h1 {
+            font-size: 28px;
+            margin-bottom: 15px;
+            letter-spacing: 3px;
+            color: #d4af37;
+        }
+
+        #instructions p {
+            font-size: 15px;
+            line-height: 1.6;
+            margin: 10px 0;
+            color: #dcd6cd;
+        }
+
+        .controls-hint {
+            font-size: 13px !important;
+            color: #b0a699;
+            margin-top: 20px !important;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 15px;
+        }
+
+        /* HUD */
+        #hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+            display: none;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
+            color: rgba(212, 175, 55, 0.6);
+        }
+
+        #location-display {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(26, 22, 20, 0.8);
+            border: 1px solid rgba(212, 175, 55, 0.4);
+            padding: 10px 18px;
+            border-radius: 8px;
+            border-left: 4px solid #d4af37;
+            font-size: 15px;
+            backdrop-filter: blur(6px);
+        }
+
+        #controls-help {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(26, 22, 20, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 8px 18px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #dcd6cd;
+            backdrop-filter: blur(6px);
+        }
+
+        /* Mini-mapa 2D */
+        #minimap-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(26, 22, 20, 0.9);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 10px;
+            padding: 10px;
+            z-index: 20;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            display: none;
+        }
+
+        #minimap-header {
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 5px;
+            color: #d4af37;
+        }
+
+        #close-map {
+            cursor: pointer;
+            font-size: 16px;
+            color: #ff5e57;
+            pointer-events: auto;
+        }
+
+        #minimap-canvas {
+            background: #110e0c;
+            border-radius: 4px;
+            display: block;
+        }
+    </style>
+
+    <!-- Importar Three.js y PointerLockControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+</head>
+<body>
+    <div id="blocker">
+        <div id="instructions">
+            <h1>CAFÉ • ESTÉTICA • YOGA</h1>
+            <p>Haz clic aquí para ingresar a la experiencia 3D inmersiva</p>
+            <p class="controls-hint">
+                <strong>W A S D</strong> : Moverse por el lugar<br>
+                <strong>MOUSE</strong> : Mirar alrededor<br>
+                <strong>M</strong> : Abrir / Cerrar Mapa 2D<br>
+                <strong>ESC</strong> : Liberar el cursor
+            </p>
+        </div>
+    </div>
+
+    <div id="hud">
+        <div id="crosshair">✦</div>
+        <div id="location-display">Ubicación: <span id="current-room">Hallway</span></div>
+        <div id="controls-help">W A S D para moverte | M para Mapa del Local</div>
+    </div>
+
+    <div id="minimap-container">
+        <div id="minimap-header">Plano del Local <span id="close-map">×</span></div>
+        <canvas id="minimap-canvas" width="200" height="200"></canvas>
+    </div>
+
+    <script>
+        let camera, scene, renderer, controls;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let prevTime = performance.now();
+        
+        const colliders = [];
+        
+        // Estructura de datos exacta de habitaciones
+        const rooms = [
+            { name: "Cafetería", xMin: -14, xMax: -4, zMin: -10, zMax: 0 },
+            { name: "Recepción", xMin: 4, xMax: 14, zMin: -10, zMax: 0 },
+            { name: "Estética", xMin: -14, xMax: -8, zMin: -20, zMax: -10 },
+            { name: "Sala de Yoga", xMin: -7, xMax: 0, zMin: -22, zMax: -10 },
+            { name: "Baños / WC", xMin: 1, xMax: 8, zMin: -22, zMax: -10 },
+            { name: "Staff Office", xMin: 9, xMax: 14, zMin: -20, zMax: -10 },
+            { name: "Hallway", xMin: -4, xMax: 4, zMin: -12, zMax: 10 },
+            { name: "Storage Room", xMin: -14, xMax: -8, zMin: 0, zMax: 10 },
+            { name: "Private Closet", xMin: 8, xMax: 14, zMin: 0, zMax: 10 }
+        ];
+
+        let showMinimap = false;
+        let minimapCanvas, minimapCtx;
+
+        window.addEventListener('load', () => {
+            init();
+            animate();
+        });
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1614);
+            scene.fog = new THREE.FogExp2(0x1a1614, 0.012);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            controls = new THREE.PointerLockControls(camera, document.body);
+
+            // FIX CRITICO: Posición inicial segura.
+            // En el código original Z=5 te metía dentro de una pared sólida generada.
+            // Ahora Z=8 te ubica en un lugar despejado y seguro en la entrada del pasillo.
+            controls.getObject().position.set(0, 1.7, 8);
+            scene.add(controls.getObject());
+
+            const blocker = document.getElementById('blocker');
+            const instructions = document.getElementById('instructions');
+
+            instructions.addEventListener('click', () => {
+                // Forzamos el foco en la ventana para asegurar que Chrome escuche el teclado
+                window.focus(); 
+                controls.lock();
+            });
+
+            controls.addEventListener('lock', () => {
+                blocker.style.display = 'none';
+                document.getElementById('hud').style.display = 'block';
+            });
+
+            controls.addEventListener('unlock', () => {
+                blocker.style.display = 'flex';
+                document.getElementById('hud').style.display = 'none';
+                // Reseteamos el movimiento para evitar seguir caminando al abrir el menú
+                moveForward = moveBackward = moveLeft = moveRight = false;
+            });
+
+            // FIX CRITICO: Controles robustos comprobando e.code y e.key
+            // Esto asegura que funcione sin importar el layout de teclado del usuario
+            window.addEventListener('keydown', (e) => {
+                if (!controls.isLocked) return;
+                const key = e.key ? e.key.toLowerCase() : '';
+                switch (e.code) {
+                    case 'KeyW': case 'ArrowUp': moveForward = true; break;
+                    case 'KeyA': case 'ArrowLeft': moveLeft = true; break;
+                    case 'KeyS': case 'ArrowDown': moveBackward = true; break;
+                    case 'KeyD': case 'ArrowRight': moveRight = true; break;
+                    case 'KeyM': toggleMinimap(); break;
+                    default:
+                        if (key === 'w') moveForward = true;
+                        if (key === 'a') moveLeft = true;
+                        if (key === 's') moveBackward = true;
+                        if (key === 'd') moveRight = true;
+                        if (key === 'm') toggleMinimap();
+                }
+            });
+
+            window.addEventListener('keyup', (e) => {
+                const key = e.key ? e.key.toLowerCase() : '';
+                switch (e.code) {
+                    case 'KeyW': case 'ArrowUp': moveForward = false; break;
+                    case 'KeyA': case 'ArrowLeft': moveLeft = false; break;
+                    case 'KeyS': case 'ArrowDown': moveBackward = false; break;
+                    case 'KeyD': case 'ArrowRight': moveRight = false; break;
+                    default:
+                        if (key === 'w') moveForward = false;
+                        if (key === 'a') moveLeft = false;
+                        if (key === 's') moveBackward = false;
+                        if (key === 'd') moveRight = false;
+                }
+            });
+
+            document.getElementById('close-map').addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleMinimap(false);
+            });
+
+            // Construir ambiente
+            createLighting();
+            createFloorsAndCeilings();
+            createWalls();
+            createCafeDecor();
+            createReceptionDecor();
+            createAestheticsDecor();
+            createYogaDecor();
+            createBathroomsDecor();
+            createStaffOfficeDecor();
+            createStorageDecor();
+            createPrivateClosetDecor();
+
+            minimapCanvas = document.getElementById('minimap-canvas');
+            minimapCtx = minimapCanvas.getContext('2d');
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function createLighting() {
+            const ambientLight = new THREE.AmbientLight(0xfffaed, 0.5);
+            scene.add(ambientLight);
+
+            createPointLight(-9, 2.5, -5, 0xffb74d, 2.5, 12); 
+            createPointLight(9, 2.5, -5, 0xffe0b2, 2.0, 12);  
+            createPointLight(-3.5, 2.5, -16, 0xd1c4e9, 1.8, 10); 
+            createPointLight(0, 2.5, 2, 0xfffaed, 2.0, 15);   
+            createPointLight(-11, 2.5, -15, 0xffcc80, 1.5, 8); 
+        }
+
+        function createPointLight(x, y, z, color, intensity, distance) {
+            const light = new THREE.PointLight(color, intensity, distance);
+            light.position.set(x, y, z);
+            scene.add(light);
+        }
+
+        function createFloorsAndCeilings() {
+            const floorGeom = new THREE.PlaneGeometry(35, 45);
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x3d2817, roughness: 0.6, metalness: 0.1 });
+            const floor = new THREE.Mesh(floorGeom, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            const ceilingGeom = new THREE.PlaneGeometry(35, 45);
+            const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x1f1a17, roughness: 0.9 });
+            const ceiling = new THREE.Mesh(ceilingGeom, ceilingMat);
+            ceiling.position.y = 3;
+            ceiling.rotation.x = Math.PI / 2;
+            scene.add(ceiling);
+        }
+
+        function addWall(x, y, z, w, h, d) {
+            const geom = new THREE.BoxGeometry(w, h, d);
+            const mat = new THREE.MeshStandardMaterial({ color: 0xede6df, roughness: 0.7 });
+            const mesh = new THREE.Mesh(geom, mat);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+
+            mesh.updateMatrixWorld();
+            colliders.push(new THREE.Box3().setFromObject(mesh));
+        }
+
+        function createWalls() {
+            // Paredes perimetrales
+            addWall(0, 1.5, -22.5, 30, 3, 0.5); // Fondo
+            addWall(0, 1.5, 12.5, 30, 3, 0.5);  // Frente
+            addWall(-14.75, 1.5, -5, 0.5, 3, 35); // Izquierda
+            addWall(14.75, 1.5, -5, 0.5, 3, 35);  // Derecha
+
+            // Divisores laterales
+            addWall(-7, 1.5, -5, 0.5, 3, 10);
+            addWall(7, 1.5, -5, 0.5, 3, 10);
+
+            // FIX CRITICO: En el original, estas paredes transversales bloqueaban todo.
+            // Ahora creamos paredes separadas para dejar "puertas" o pasillos en el centro (X = 0).
+            
+            // Paredes en Z = -16 (Acceso a Yoga/Baños) - Hueco de 2 metros en el medio
+            addWall(-5, 1.5, -16, 6, 3, 0.5); // Pared izquierda de X=-8 a X=-2
+            addWall(5, 1.5, -16, 6, 3, 0.5);  // Pared derecha de X=2 a X=8
+
+            // Paredes en Z = -10 (Mitad del pasillo principal)
+            addWall(-6, 1.5, -10, 4, 3, 0.5); 
+            addWall(6, 1.5, -10, 4, 3, 0.5);  
+
+            // Paredes en Z = 5 (Entrada cerca del spawn) - Hueco central seguro
+            addWall(-5, 1.5, 5, 6, 3, 0.5);
+            addWall(5, 1.5, 5, 6, 3, 0.5);
+        }
+
+        function createSign(x, y, z, text) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#2b221e'; ctx.fillRect(0, 0, 256, 64);
+            ctx.fillStyle = '#d4af37'; ctx.font = 'bold 22px Arial';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(text, 128, 32);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), new THREE.MeshBasicMaterial({ map: texture }));
+            mesh.position.set(x, y, z);
+            scene.add(mesh);
+        }
+
+        function createBox(x, y, z, w, h, d, color, isCollider = true) {
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.5 }));
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+            if (isCollider) {
+                mesh.updateMatrixWorld();
+                colliders.push(new THREE.Box3().setFromObject(mesh));
+            }
+            return mesh;
+        }
+
+        function createCafeDecor() {
+            createBox(-11, 0.5, -3, 3, 1, 1.5, 0xd4a373);
+            createBox(-11, 0.4, -1.8, 0.4, 0.8, 0.4, 0xe0a98d, false);
+            createBox(-9.5, 0.4, -1.8, 0.4, 0.8, 0.4, 0xe0a98d, false);
+            createBox(-3, 0.4, 3, 2.5, 0.8, 1, 0xdcd6cd);
+            
+            const tableGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.4, 16);
+            const tableMat = new THREE.MeshStandardMaterial({ color: 0x8d6e63 });
+            const table = new THREE.Mesh(tableGeo, tableMat);
+            table.position.set(-3, 0.2, 1.5);
+            table.castShadow = true; scene.add(table);
+            colliders.push(new THREE.Box3().setFromObject(table));
+
+            createSign(-9, 2.2, -0.1, "CAFETERÍA");
+        }
+
+        function createReceptionDecor() {
+            createBox(11, 0.5, -3, 3, 1, 1.5, 0x5c4033);
+            createBox(11, 0.4, -1.5, 0.6, 0.8, 0.6, 0xdcd6cd, false);
+            createSign(9, 2.2, -0.1, "RECEPCIÓN");
+        }
+
+        function createAestheticsDecor() {
+            createBox(-11, 0.4, -15, 1.8, 0.8, 0.9, 0xffffff);
+            const mirrorGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.05, 32);
+            const mirrorMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.1 });
+            const mirror = new THREE.Mesh(mirrorGeo, mirrorMat);
+            mirror.position.set(-14, 1.8, -15);
+            mirror.rotation.y = Math.PI / 2;
+            scene.add(mirror);
+            createSign(-11, 2.2, -9.9, "ESTÉTICA");
+        }
+
+        function createYogaDecor() {
+            createBox(-3.5, 0.02, -18, 0.6, 0.02, 1.8, 0x7e57c2, false);
+            createBox(-2, 0.02, -18, 0.6, 0.02, 1.8, 0xab47bc, false);
+            createSign(-3.5, 2.2, -9.9, "SALA DE YOGA");
+        }
+
+        function createBathroomsDecor() {
+            createBox(4.5, 0.5, -19, 0.8, 1, 0.8, 0xffffff);
+            createSign(4.5, 2.2, -9.9, "BAÑOS / WC");
+        }
+
+        function createStaffOfficeDecor() {
+            createBox(11.5, 0.5, -15, 1.5, 1, 0.8, 0x4e342e);
+            createSign(11.5, 2.2, -9.9, "STAFF OFFICE");
+        }
+
+        function createStorageDecor() {
+            createBox(-11, 1, 7, 1.2, 2, 3, 0x6d4c41);
+            createSign(-11, 2.2, 4.9, "STORAGE");
+        }
+
+        function createPrivateClosetDecor() {
+            createBox(11, 1, 7, 2, 2, 1, 0x3e2723);
+            createSign(11, 2.2, 4.9, "PRIVATE CLOSET");
+        }
+
+        function updateCurrentRoom(pos) {
+            let roomName = "Hallway";
+            for (let r of rooms) {
+                if (pos.x >= r.xMin && pos.x <= r.xMax && pos.z >= r.zMin && pos.z <= r.zMax) {
+                    roomName = r.name;
+                    break;
+                }
+            }
+            document.getElementById('current-room').innerText = roomName;
+        }
+
+        function toggleMinimap(force) {
+            showMinimap = force !== undefined ? force : !showMinimap;
+            document.getElementById('minimap-container').style.display = showMinimap ? 'block' : 'none';
+        }
+
+        function drawMinimap(pos) {
+            minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+            const scale = 3.5;
+            const ox = minimapCanvas.width / 2;
+            const oy = minimapCanvas.height / 2;
+
+            minimapCtx.fillStyle = '#2b221e';
+            rooms.forEach(r => {
+                minimapCtx.fillRect(ox + r.xMin * scale, oy + r.zMin * scale, (r.xMax - r.xMin) * scale, (r.zMax - r.zMin) * scale);
+            });
+
+            minimapCtx.fillStyle = '#d4af37';
+            minimapCtx.beginPath();
+            minimapCtx.arc(ox + pos.x * scale, oy + pos.z * scale, 4, 0, Math.PI * 2);
+            minimapCtx.fill();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now();
+
+            if (controls.isLocked === true) {
+                // FIX CRITICO: Limitar el Delta. Evita atravesar paredes al cambiar de pestaña.
+                let delta = (time - prevTime) / 1000;
+                if (delta > 0.1) delta = 0.1; 
+                
+                const speed = 7.0;
+                const oldPos = controls.getObject().position.clone();
+
+                if (moveForward) controls.moveForward(speed * delta);
+                if (moveBackward) controls.moveForward(-speed * delta);
+                if (moveLeft) controls.moveRight(-speed * delta);
+                if (moveRight) controls.moveRight(speed * delta);
+
+                const newPos = controls.getObject().position.clone();
+                controls.getObject().position.y = 1.7; // Forzar altura constante Y
+
+                // Función auxiliar para obtener el hitbox del jugador en una posición dada
+                const getPlayerBox = (pos) => {
+                    return new THREE.Box3(
+                        new THREE.Vector3(pos.x - 0.3, 0.5, pos.z - 0.3),
+                        new THREE.Vector3(pos.x + 0.3, 2.5, pos.z + 0.3)
+                    );
+                };
+
+                let playerBox = getPlayerBox(newPos);
+                let collided = false;
+                
+                for (let i = 0; i < colliders.length; i++) {
+                    if (playerBox.intersectsBox(colliders[i])) {
+                        collided = true;
+                        break;
+                    }
+                }
+
+                // FIX CRITICO: Colisiones deslizantes.
+                // En el original, te detenías por completo. Ahora, resbalas contra las paredes.
+                if (collided) {
+                    let slideXBox = getPlayerBox(new THREE.Vector3(newPos.x, 1.7, oldPos.z));
+                    let collidedX = false;
+                    for (let i = 0; i < colliders.length; i++) {
+                        if (slideXBox.intersectsBox(colliders[i])) collidedX = true;
+                    }
+
+                    if (!collidedX) {
+                        controls.getObject().position.set(newPos.x, 1.7, oldPos.z);
+                    } else {
+                        let slideZBox = getPlayerBox(new THREE.Vector3(oldPos.x, 1.7, newPos.z));
+                        let collidedZ = false;
+                        for (let i = 0; i < colliders.length; i++) {
+                            if (slideZBox.intersectsBox(colliders[i])) collidedZ = true;
+                        }
+
+                        if (!collidedZ) {
+                            controls.getObject().position.set(oldPos.x, 1.7, newPos.z);
+                        } else {
+                            // Bloqueo total si es en esquina
+                            controls.getObject().position.copy(oldPos);
+                        }
+                    }
+                } 
+                
+                updateCurrentRoom(controls.getObject().position);
+                if (showMinimap) drawMinimap(controls.getObject().position);
+            }
+
+            prevTime = time;
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
